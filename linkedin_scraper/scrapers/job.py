@@ -18,7 +18,6 @@ class JobScraper(BaseScraper):
     async def scrape(self, linkedin_url: str) -> Job:
         await self.callback.on_start("Job", linkedin_url)
         await self.navigate_and_wait(linkedin_url)
-        await self.callback.on_progress("Navigated to job page", 10)
         await self.check_rate_limit()
 
         company = await self._get_company()
@@ -33,15 +32,14 @@ class JobScraper(BaseScraper):
             job_description=await self._get_description(),
         )
 
-        await self.callback.on_progress("Scraping complete", 100)
         await self.callback.on_complete("Job", job)
         return job
 
     async def _get_job_title(self) -> Optional[str]:
         try:
-            title_elem = self.page.locator('h1').first
-            await title_elem.wait_for(timeout=5000)
-            return (await title_elem.inner_text()).strip()
+            elem = self.page.locator('h1').first
+            await elem.wait_for(timeout=5000)
+            return (await elem.inner_text()).strip()
         except:
             return None
 
@@ -49,7 +47,7 @@ class JobScraper(BaseScraper):
         try:
             for link in await self.page.locator('a[href*="/company/"]').all():
                 text = (await link.inner_text()).strip()
-                if text and len(text) > 1 and not text.startswith('logo'):
+                if text and len(text) > 1 and not text.lower().startswith('logo'):
                     return text
         except:
             pass
@@ -67,22 +65,42 @@ class JobScraper(BaseScraper):
             pass
         return None
 
-    async def _get_primary_description_parts(self):
+    async def _get_primary_description_parts(self) -> list[str]:
+        container_selectors = [
+            '.job-details-jobs-unified-top-card__primary-description-container',
+            '.job-details-jobs-unified-top-card__primary-description',
+            '[class*="primary-description"]',
+            '.jobs-unified-top-card__primary-description',
+            '.jobs-unified-top-card__subtitle-primary-grouping',
+        ]
+        for selector in container_selectors:
+            try:
+                elem = self.page.locator(selector).first
+                if await elem.count() > 0:
+                    text = (await elem.inner_text()).strip()
+                    if text:
+                        parts = [p.strip() for p in text.split('·') if p.strip()]
+                        if parts:
+                            return parts
+            except:
+                continue
+
         try:
-            container = self.page.locator(
-                '.job-details-jobs-unified-top-card__primary-description-container'
-            ).first
-            if await container.count() > 0:
-                text = await container.inner_text()
-                return [p.strip() for p in text.split('·')]
+            top_card = self.page.locator('.jobs-unified-top-card, [class*="top-card"]').first
+            if await top_card.count() > 0:
+                text = (await top_card.inner_text()).strip()
+                parts = [p.strip() for p in text.split('·') if p.strip()]
+                if parts:
+                    return parts
         except:
             pass
+
         return []
 
     async def _get_location(self, company: Optional[str] = None) -> Optional[str]:
         parts = await self._get_primary_description_parts()
         if parts:
-            segment = parts[0].strip()
+            segment = parts[0]
             if company and segment.startswith(company):
                 segment = segment[len(company):].strip()
 
@@ -94,19 +112,29 @@ class JobScraper(BaseScraper):
             if len(chunks) > 1:
                 return chunks[-1].strip()
             return segment or None
+
+        try:
+            for elem in await self.page.locator(
+                '.jobs-unified-top-card span, [class*="top-card"] span'
+            ).all():
+                text = (await elem.inner_text()).strip()
+                if text and len(text) < 80 and (',' in text or 'Remote' in text):
+                    return text
+        except:
+            pass
         return None
 
     async def _get_posted_date(self) -> Optional[str]:
         parts = await self._get_primary_description_parts()
-        if len(parts) > 1:
-            match = re.search(r'(\d+\s+(?:hour|day|week|month|year)s?\s+ago)', parts[1], re.IGNORECASE)
+        for part in parts[1:]:
+            match = re.search(r'(\d+\s+(?:hour|day|week|month|year)s?\s+ago)', part, re.IGNORECASE)
             if match:
                 return match.group(1)
 
         try:
             for elem in await self.page.locator('span, div').all():
                 text = (await elem.inner_text()).strip()
-                if text and len(text) < 50:
+                if text and len(text) < 60:
                     match = re.search(r'(\d+\s+(?:hour|day|week|month|year)s?\s+ago)', text, re.IGNORECASE)
                     if match:
                         return match.group(1)
@@ -124,15 +152,27 @@ class JobScraper(BaseScraper):
             )
             if match:
                 return match.group(1).strip()
+
+        try:
+            for elem in await self.page.locator('span, div').all():
+                text = (await elem.inner_text()).strip()
+                if text and len(text) < 80:
+                    if any(w in text.lower() for w in ['applicant', 'people clicked', 'applied']):
+                        cleaned = re.sub(r'\d+\s+(?:hour|day|week|month|year)s?\s+ago\s*', '', text, flags=re.IGNORECASE).strip()
+                        if cleaned:
+                            return cleaned
+        except:
+            pass
         return None
 
     async def _get_description(self) -> Optional[str]:
         for selector in [
+            '#job-details',
+            'div[id="job-details"]',
             '.jobs-description__content',
             '.jobs-description-content__text',
             '[class*="jobs-description"]',
-            '#job-details',
-            'div[id="job-details"]',
+            '.jobs-box__html-content',
             'article',
         ]:
             try:
