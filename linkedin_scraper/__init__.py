@@ -1,12 +1,15 @@
 """LinkedIn Scraper - Async Playwright-based scraper for LinkedIn."""
 
+import sys
 import traceback
 
 # Version
 __version__ = "3.1.2"
 
+# Track what was successfully imported
+_import_errors = []
+
 # Core modules
-print("DEBUG: Importing core modules...")
 try:
     from .core import (
         BrowserManager,
@@ -24,14 +27,12 @@ try:
         NetworkError,
         ScrapingError,
     )
-    print("✓ Core modules imported successfully")
 except Exception as e:
-    print(f"✗ FAILED to import core modules: {e}")
+    _import_errors.append(f"core: {type(e).__name__}: {e}")
     traceback.print_exc()
-    raise
+    print(f"\n❌ FAILED to import core modules: {e}\n", file=sys.stderr)
 
 # Scrapers
-print("DEBUG: Importing scrapers...")
 try:
     from .scrapers import (
         PersonScraper,
@@ -43,14 +44,12 @@ try:
         PostReactionsScraper,
         ExtractUsersFromPostsScraper,
     )
-    print("✓ Scrapers imported successfully")
 except Exception as e:
-    print(f"✗ FAILED to import scrapers: {e}")
+    _import_errors.append(f"scrapers: {type(e).__name__}: {e}")
     traceback.print_exc()
-    raise
+    print(f"\n❌ FAILED to import scrapers: {e}\n", file=sys.stderr)
 
 # Callbacks
-print("DEBUG: Importing callbacks...")
 try:
     from .callbacks import (
         ProgressCallback,
@@ -59,14 +58,12 @@ try:
         JSONLogCallback,
         MultiCallback,
     )
-    print("✓ Callbacks imported successfully")
 except Exception as e:
-    print(f"✗ FAILED to import callbacks: {e}")
+    _import_errors.append(f"callbacks: {type(e).__name__}: {e}")
     traceback.print_exc()
-    raise
+    print(f"\n❌ FAILED to import callbacks: {e}\n", file=sys.stderr)
 
 # Models
-print("DEBUG: Importing models...")
 try:
     from .models import (
         Person,
@@ -84,13 +81,18 @@ try:
         PostEngagementUser,
         ExtractUsersResult,
     )
-    print("✓ Models imported successfully")
 except Exception as e:
-    print(f"✗ FAILED to import models: {e}")
+    _import_errors.append(f"models: {type(e).__name__}: {e}")
     traceback.print_exc()
-    raise
+    print(f"\n❌ FAILED to import models: {e}\n", file=sys.stderr)
 
-print("DEBUG: All imports completed successfully!")
+# Print summary if there were errors
+if _import_errors:
+    print("\n" + "="*60, file=sys.stderr)
+    print("⚠️  IMPORT ERRORS DETECTED:", file=sys.stderr)
+    for error in _import_errors:
+        print(f"  - {error}", file=sys.stderr)
+    print("="*60 + "\n", file=sys.stderr)
 
 __all__ = [
     # Version
